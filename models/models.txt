@@ -1,0 +1,7 @@
+These are the models that i have in this directory and these are the download links of the respective models
+
+
+-> openhermes-2.5-mistral-7b.Q4_K_M.gguf : https://huggingface.co/TheBloke/OpenHermes-2.5-Mistral-7B-GGUF/blob/main/openhermes-2.5-mistral-7b.Q4_K_M.gguf
+
+
+-> tinyllama.gguf : https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/blob/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
