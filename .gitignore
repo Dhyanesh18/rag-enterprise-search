@@ -1,3 +1,5 @@
 llama-cpp-python/
+chroma_store/
+chat_log.json
 
 *.gguf
