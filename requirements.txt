@@ -1,3 +1,6 @@
 llama-cpp-python
-chormadb
+chromadb
 sentence-transformers
+langchain
+PyPDF2
+pdfplumber

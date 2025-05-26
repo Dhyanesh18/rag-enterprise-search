@@ -1,6 +1,7 @@
 import time
 import chromadb
 from chromadb.config import Settings
+import hashlib
 
 class MemoryStore:
     def __init__(self, persist_dir="./chroma_store", collection_name="chat_history"):
@@ -29,3 +30,15 @@ class MemoryStore:
     def reset(self):
         self.client.delete_collection("chat_history")
         self.collection = self.client.get_or_create_collection(name="chat_history")
+
+    def store_document(self, chunk,embedding, file_path, file_type):
+        chunk_id = hashlib.sha256(chunk.encode('utf-8')).hexdigest()
+        self.collection.add(
+            documents=[chunk],
+            embeddings=[embedding],
+            ids=[chunk_id],
+            metadatas=[{
+                "source": file_path,
+                "file_type": file_type.lstrip('.')
+            }]
+        )
