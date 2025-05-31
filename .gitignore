@@ -1,5 +1,10 @@
 llama-cpp-python/
 chroma_store/
 chat_log.json
+data/
+datasets/
+chroma_store_beir/
+
+
 
 *.gguf

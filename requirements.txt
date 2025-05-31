@@ -4,3 +4,6 @@ sentence-transformers
 langchain
 PyPDF2
 pdfplumber
+python-docx
+beir
+numpy

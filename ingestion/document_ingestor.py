@@ -13,6 +13,7 @@ logger = JSONLogger("document_ingestion_log.json")
 
 
 def extract_pdf_text(file_path):
+    """Extract text from a PDF file using pdfplumber, falling back to PyPDF2 if necessary."""
     try:
         with pdfplumber.open(file_path) as pdf:
             text = ""
@@ -32,14 +33,17 @@ def extract_pdf_text(file_path):
         return text.strip()
     
 def extract_md_text(file_path):
+    """Extract text from a Markdown file."""
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read().strip()
 
 def extract_txt_text(file_path):
+    """Extract text from a plain text file."""
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read().strip()
 
 def extract_docx_text(file_path):
+    """Extract text from a DOCX file, handling headings and tables."""
     doc = Document(file_path)
     full_text = []
 
@@ -63,14 +67,14 @@ def extract_docx_text(file_path):
     return "\n".join(full_text).strip()
 
 def clean_text(text):
-    # Normalize whitespace: multiple spaces/newlines → single space
-    text = re.sub(r'\s+', ' ', text)
-    text = text.strip()
-    return text
+    """Clean the extracted text by removing excessive whitespace and newlines."""
+    text = re.sub(r'[ \t]+', ' ', text) # Replace multiple spaces/tabs with a single space
+    text = re.sub(r'\n{3,}', '\n\n', text) # Replace multiple newlines with two newlines
+    return text.strip()
 
 
-# Function to ingest a file and store its content in the memory store
 def ingest_file(file_path):
+    """Ingest a file and store its content in the memory store."""
     ext = os.path.splitext(file_path)[1].lower()
 
     if ext == ".pdf":
@@ -85,19 +89,28 @@ def ingest_file(file_path):
         raise ValueError(f"Unsupported file type: {ext}")
 
     text = clean_text(text)
+    
+    splitter = RecursiveCharacterTextSplitter( 
+        chunk_size=800,
+        chunk_overlap=100,
+        separators=["\n\n", "\n", ". ", "! ", "? ", ".", "!", "?", " "]
+    )
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
     chunks = splitter.split_text(text)
 
     total_chunks = len(chunks)
     ingested_chunks = 0
 
     store = MemoryStore(collection_name="documents")
-    for chunk in chunks:
+    for i, chunk in enumerate(chunks):
         if chunk.strip():
-            embedding = embedder.get_embedding(chunk)
-            store.store_document(chunk, embedding, file_path, ext)
             ingested_chunks += 1
+            embedding = embedder.get_embedding(chunk)
+            metadata = {
+                "chunk_index": i
+            }
+            store.store_document(chunk, embedding, file_path, ext, metadata=metadata)
+
 
     logger.log_ingestion(file_path, total_chunks, ingested_chunks)
     print(f"Ingested {ingested_chunks}/{total_chunks} chunks from {file_path}")
