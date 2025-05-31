@@ -4,7 +4,10 @@ chat_log.json
 data/
 datasets/
 chroma_store_beir/
+chroma_store_beir_hybrid/
 
-
+evaluation_results/
 
 *.gguf
+*.pkl
+*.json

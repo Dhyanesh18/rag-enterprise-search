@@ -13,7 +13,7 @@ class LlamaChat:
             offload_kqv=True  # Saves VRAM
         )
     
-    def generate(self, prompt, max_tokens=1536, temperature=0.2):
+    def generate(self, prompt, max_tokens=8196, temperature=0.2):
         """Generate a response from the LLM based on the provided prompt"""
         self.llm.reset()  # Clear cache
         output = self.llm(

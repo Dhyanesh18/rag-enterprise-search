@@ -3,45 +3,27 @@ from memory.embedder import Embedder
 from memory.logger import JSONLogger
 from utils.prompt_builder import build_prompt
 from retrieval_pipeline import RetrievalPipeline
+from hybrid_retrieval_pipeline import HybridRetrievalPipeline
 
 system_prompt= """
-You are an AI assistant that answers user questions **strictly using the provided context**. Follow these rules:
+You are a context-only assistant. NEVER use your training knowledge. 
 
-1. **Strict Accuracy**: Only answer based on the given context. Do NOT use outside knowledge, assumptions, or hallucinate facts.
+Rules:
+- ONLY use the provided context to answer
+- If the context doesn't contain the answer, respond: "I don't know based on the provided context"
+- For technical questions, include ALL details from the context including version requirements, warnings, and edge cases
+- If the context is not relevant, respond: "I don't know based on the provided context"
+- If the context is not sufficient, respond: "I don't know based on the provided context"
+- Context 1 is always the most relevant, so prioritize it, followed by Context 2, and so on
+- Use the format: "Based on the context: [your answer]"
 
-2. **Context Attribution**: Always indicate where information comes from using phrases like:
-   - "According to the provided context..."
-   - "The documentation shows..."
-   - "Based on the given information..."
-
-3. **Clarity & Markdown**: Present the answer using markdown formatting (e.g. headers, bullet points, code blocks). Use clear structure and neutral tone.
-
-4. **If Unanswerable**: If the answer is not available in the context, reply with:  
-   👉 "I don't know based on the provided information."
-
-5. **Answer Depth**:
-   - **Always write a full, elaborated response**, ideally between **300 and 400 words**, unless the context is very limited.
-   - Include both **basic instructions** and **important edge cases** like:
-     - Version requirements
-     - Deprecated features or methods
-     - Preview or beta version usage
-     - Platform or tool-specific installation/config nuances
-
-6. **Reasoned Responses** (for technical or complex questions):
-   - First understand what is being asked.
-   - Extract the most relevant parts of the context.
-   - Explain step-by-step, breaking down instructions or concepts as needed.
-
-7. **Neutral & Helpful**:
-   - Match user sentiment but remain professional and precise.
-   - Avoid repetition or vague summaries.
-
-8. **Content Safety**: Reject any request for harmful, unethical, or restricted content.
+Context will be provided after this prompt.
 """
 
 
 llama = LlamaChat(model_path="./models/openhermes-2.5-mistral-7b.Q4_K_M.gguf")
-retriever = RetrievalPipeline(True, False, 10)
+# retriever = RetrievalPipeline(use_cross_encoder=True, use_bandit=False, top_k=10)
+retriever = HybridRetrievalPipeline(use_cross_encoder=True, use_bandit=False, top_k=50)
 embedder = Embedder()
 logger = JSONLogger()
 
@@ -68,12 +50,10 @@ try:
             print("No relevant context found. Please try again.")
             continue
 
-        print("Context:")
         for i, ctx in enumerate(context_list):
             print(f"{i + 1}. {ctx['content']}\n")
 
         prompt = build_prompt(system_prompt, context_list, user_input)
-        print(f"\nPrompt:\n{prompt}\n")
         
         try:
             response = llama.generate(prompt)

@@ -17,6 +17,12 @@ def build_prompt(system_prompt, context_list, user_input):
     prompt += f"<|user|>\nHere are some relevant context pieces:\n{context_section.strip()}\n"
 
     # Add the user's actual question
-    prompt += f"\nQuestion: {user_input.strip()}\n<|assistant|>\n"
+    prompt += f"\nQuestion: {user_input.strip()}\n"
 
+    prompt += """- If the context is not relevant, respond: "I don't know based on the provided context"
+- Context 1 IS THE MOST RELEVANT, Context 2 IS THE SECOND MOST RELEVENT, and so on (BETTER SCORE MEANS BETTER RELEVANCE).
+- Provide all the relevant information from the context in your answer.
+- INCLUDE ALL THE IMPORTANT DETAILS LIKE EDGE CASES, VERSIONS, SPECIAL CASES, REQUIREMENTS, BOTTLENECKS."""
+
+    prompt += "<|assistant|>\n"
     return prompt
