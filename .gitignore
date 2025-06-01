@@ -7,6 +7,8 @@ chroma_store_beir/
 chroma_store_beir_hybrid/
 
 evaluation_results/
+models/all-MiniLM-L6-v2/
+models/ms-marco-MiniLM-L-6-v2/
 
 *.gguf
 *.pkl

@@ -2,8 +2,8 @@ from sentence_transformers import CrossEncoder
 import numpy as np
 
 class CrossEncoderReranker:
-    def __init__(self, model_name="cross-encoder/ms-marco-MiniLM-L-6-v2"):
-        self.model = CrossEncoder(model_name, device="cpu")  # Safer for 4GB VRAM
+    def __init__(self, model_path="./models/ms-marco-MiniLM-L-6-v2"):
+        self.model = CrossEncoder(model_path, device="cpu")  # Safer for 4GB VRAM
     
     def rerank(self, query: str, passages: list[dict], top_k: int = 10):
         if not passages:

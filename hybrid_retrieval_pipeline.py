@@ -114,7 +114,7 @@ class HybridRetrievalPipeline:
         
         return results
     
-    def _reciprocal_rank_fusion(self, result_lists: List[List[Dict]], k: int = 60) -> List[Dict[str, Any]]:
+    def reciprocal_rank_fusion(self, result_lists: List[List[Dict]], k: int = 60) -> List[Dict[str, Any]]:
         """Apply Reciprocal Rank Fusion to combine multiple result lists"""
         fused_scores = {}
         
@@ -159,7 +159,7 @@ class HybridRetrievalPipeline:
         
         # Step 2: Apply RRF fusion
         if bm25_results and dense_results:
-            fused_results = self._reciprocal_rank_fusion([dense_results, bm25_results])
+            fused_results = self.reciprocal_rank_fusion([dense_results, bm25_results])
         elif dense_results:
             fused_results = dense_results
         elif bm25_results:

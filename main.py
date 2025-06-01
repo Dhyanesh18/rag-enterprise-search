@@ -1,9 +1,11 @@
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from models.llama_wrapper import LlamaChat
-from memory.embedder import Embedder
 from memory.logger import JSONLogger
-from utils.prompt_builder import build_prompt
-from retrieval_pipeline import RetrievalPipeline
 from hybrid_retrieval_pipeline import HybridRetrievalPipeline
+from utils.pipeline_runner import run_hyde_pipeline, run_standard_pipeline
+from utils.prompt_builder import build_prompt
+
 
 system_prompt= """
 You are a context-only assistant. NEVER use your training knowledge. 
@@ -22,51 +24,70 @@ Context will be provided after this prompt.
 
 
 llama = LlamaChat(model_path="./models/openhermes-2.5-mistral-7b.Q4_K_M.gguf")
-# retriever = RetrievalPipeline(use_cross_encoder=True, use_bandit=False, top_k=10)
-retriever = HybridRetrievalPipeline(use_cross_encoder=True, use_bandit=False, top_k=50)
-embedder = Embedder()
+pipeline = HybridRetrievalPipeline(use_cross_encoder=True, top_k=50)
 logger = JSONLogger()
 
-print("Chat with Mistral (type Ctrl+C to stop)")
 
-try:
-    while True:
-        user_input = input("User: ").strip()
-        if not user_input:
-            continue
-        top_chunks = retriever.retrieve(user_input)
+async def hybrid_retrieve_with_hyde(query, llm, pipeline):
+    """Run the hybrid retrieval pipeline with HyDE and standard retrieval in parallel."""
+    # Run both pipelines in parallel using asyncio and ThreadPoolExecutor
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor() as executor:
+        task1 = loop.run_in_executor(executor, run_standard_pipeline, query, pipeline)
+        task2 = loop.run_in_executor(executor, run_hyde_pipeline, query, llm, pipeline)
 
-        context_list = [  
-            {
-                "user": "REFERENCE",
-                "content": chunk["text"],
-                "score": chunk.get("score"),
-                "meta": chunk.get("meta")
-            }   
-            for chunk in top_chunks
-        ]   
+        results_std, results_hyde = await asyncio.gather(task1, task2)
 
-        if not context_list:
-            print("No relevant context found. Please try again.")
-            continue
+    # Final fusion of both results using Reciprocal Rank Fusion (RRF)
+    if not results_std and not results_hyde:
+        return []
+    fused = pipeline.reciprocal_rank_fusion([results_std, results_hyde])
+    return fused[:10]
 
-        for i, ctx in enumerate(context_list):
-            print(f"{i + 1}. {ctx['content']}\n")
 
-        prompt = build_prompt(system_prompt, context_list, user_input)
-        
-        try:
-            response = llama.generate(prompt)
-        except Exception as e:
-            response = f"Error generating response: {str(e)}"
-            print(f"Generation error: {e}")
+if __name__ == "__main__":
+    print("Chat with Mistral (type Ctrl+C to stop)")
 
-        print(f"Assistant: {response}\n")
+    loop = asyncio.get_event_loop()
+    try:
+        while True:
+            user_input = input("User: ").strip()
+            if not user_input:
+                continue
 
-        logger.log(user_input, response)
+            # Run the hybrid retrieval pipeline asynchronously
+            top_chunks = loop.run_until_complete(hybrid_retrieve_with_hyde(user_input, llama, pipeline))
 
-except KeyboardInterrupt:
-    print("\nExiting chat. Bye!")
+            context_list = [
+                {
+                    "user": "REFERENCE",
+                    "content": chunk["text"],
+                    "score": chunk.get("score"),
+                    "meta": chunk.get("meta")
+                }
+                for chunk in top_chunks
+            ]
 
-finally:
-    del llama
+            if not context_list:
+                print("No relevant context found. Please try again.")
+                continue
+
+            for i, ctx in enumerate(context_list):
+                print(f"{i + 1}. {ctx['content']}\n")
+
+            prompt = build_prompt(system_prompt, context_list, user_input)
+
+            try:
+                response = llama.generate(prompt)
+            except Exception as e:
+                response = f"Error generating response: {str(e)}"
+                print(f"Generation error: {e}")
+
+            print(f"Assistant: {response}")
+            logger.log(user_input, response)
+
+    except KeyboardInterrupt:
+        print("\nExiting chat. Goodbye!")
+
+    finally:
+        del llama
