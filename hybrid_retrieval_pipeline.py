@@ -1,259 +1,191 @@
-import os
-import logging
-import json
-import csv
-from datetime import datetime
-from tqdm import tqdm
-from beir.datasets.data_loader import GenericDataLoader
-from beir.retrieval.evaluation import EvaluateRetrieval
 from memory.embedder import Embedder
 from memory.memory_store import MemoryStore
-from hybrid_retrieval_pipeline import HybridRetrievalPipeline
+from rerankers.cross_encoder import CrossEncoderReranker
+from rank_bm25 import BM25Okapi
+import pickle
+import os
+from typing import List, Dict, Any
 
-logging.basicConfig(level=logging.INFO)
-
-class BEIRHybridRetriever:
-    """Wrapper to make HybridRetrievalPipeline compatible with BEIR evaluation format"""
-    def __init__(self, use_cross_encoder=True, use_bandit=False, top_k=100):
+class HybridRetrievalPipeline:
+    def __init__(self, use_cross_encoder=True, top_k=50):
+        """Initialize the hybrid retrieval pipeline with BM25 + Dense -> RRF"""
         self.embedder = Embedder()
-        self.memory = MemoryStore(persist_dir="./chroma_store_beir_hybrid")
-        self.pipeline = HybridRetrievalPipeline(
-            use_cross_encoder=use_cross_encoder, 
-            use_bandit=use_bandit, 
-            top_k=top_k
-        )
-        # Override the pipeline's memory store to use our BEIR-specific one
-        self.pipeline.memory = self.memory
-
-    def index(self, corpus):
-        """Index corpus into vector store with BEIR format"""
-        print("Indexing corpus into vector store...")
-        self.memory.reset()
+        self.memory = MemoryStore(collection_name="documents")
+        self.cross_encoder = CrossEncoderReranker() if use_cross_encoder else None
+        self.top_k = top_k
         
-        for doc_id, content in tqdm(corpus.items()):
-            combined_text = (content.get("title", "") + " " + content.get("text", "")).strip()
-            embedding = self.embedder.get_embedding(combined_text)
-            metadata = {"doc_id": doc_id}
-            self.memory.store_document(
-                chunk=combined_text,
-                embedding=embedding,
-                file_path=doc_id,
-                file_type="beir",
-                metadata=metadata
-            )
+        # BM25 components
+        self.bm25_index = None
+        self.bm25_documents = []
+        self.bm25_metadata = []
+        self._load_or_build_bm25_index()
+    
+    def _load_or_build_bm25_index(self):
+        """Load existing BM25 index or build it from ChromaDB"""
+        bm25_path = "bm25_index.pkl"
+        docs_path = "bm25_docs.pkl"
+        meta_path = "bm25_meta.pkl"
         
-        # After indexing all documents, rebuild the BM25 index for hybrid retrieval
-        print("Rebuilding BM25 index for hybrid retrieval...")
-        self.pipeline.rebuild_bm25_index()
-
-    def retrieve(self, queries, top_k=15):
-        """Retrieve using the hybrid RAG pipeline and convert to BEIR format"""
-        print(f"Retrieving with hybrid pipeline (cross_encoder={self.pipeline.cross_encoder is not None}, final_k={top_k})")
-        results = {}
-        
-        for query_id, query_text in tqdm(queries.items()):
-            # Use the hybrid pipeline - this will return exactly final_k results
-            retrieved = self.pipeline.retrieve(query_text, final_k=top_k)
+        if all(os.path.exists(p) for p in [bm25_path, docs_path, meta_path]):
+            print("Loading existing BM25 index...")
+            with open(bm25_path, 'rb') as f:
+                self.bm25_index = pickle.load(f)
+            with open(docs_path, 'rb') as f:
+                self.bm25_documents = pickle.load(f)
+            with open(meta_path, 'rb') as f:
+                self.bm25_metadata = pickle.load(f)
+            print(f"Loaded BM25 index with {len(self.bm25_documents)} documents")
+        else:
+            print("Building BM25 index from ChromaDB...")
+            self._build_bm25_index()
             
-            # Convert to BEIR expected format: {doc_id: score}
-            scored = {}
-            for doc in retrieved:
-                doc_id = doc["meta"].get("doc_id")
-                if doc_id:
-                    # Use rerank_score if available (from cross-encoder), otherwise RRF score or original score
-                    score = doc.get("rerank_score", doc.get("rrf_score", doc.get("score", 0)))
-                    # BEIR expects higher scores = better, our pipeline already handles this
-                    scored[doc_id] = float(score)
+    def _build_bm25_index(self):
+        """Build BM25 index from all documents in ChromaDB"""
+        # Get all documents from ChromaDB
+        try:
+            results = self.memory.collection.get()
+            documents = results['documents']
+            metadatas = results['metadatas']
             
-            results[query_id] = scored
+            if not documents:
+                print("No documents found in ChromaDB for BM25 indexing")
+                return
+                
+            # Tokenize documents for BM25
+            tokenized_docs = [doc.lower().split() for doc in documents]
+            
+            # Build BM25 index
+            self.bm25_index = BM25Okapi(tokenized_docs)
+            self.bm25_documents = documents
+            self.bm25_metadata = metadatas
+            
+            # Save the index
+            with open("bm25_index.pkl", 'wb') as f:
+                pickle.dump(self.bm25_index, f)
+            with open("bm25_docs.pkl", 'wb') as f:
+                pickle.dump(self.bm25_documents, f)
+            with open("bm25_meta.pkl", 'wb') as f:
+                pickle.dump(self.bm25_metadata, f)
+                
+            print(f"Built and saved BM25 index with {len(documents)} documents")
+            
+        except Exception as e:
+            print(f"Error building BM25 index: {e}")
+            self.bm25_index = None
+    
+    def _bm25_search(self, query: str, top_k: int = 25) -> List[Dict[str, Any]]:
+        """Search using BM25"""
+        if not self.bm25_index:
+            return []
+            
+        tokenized_query = query.lower().split()
+        scores = self.bm25_index.get_scores(tokenized_query)
+        
+        # Get top results
+        top_indices = scores.argsort()[-top_k:][::-1]
+        
+        results = []
+        for idx in top_indices:
+            if scores[idx] > 0:  # Only include positive scores
+                results.append({
+                    "text": self.bm25_documents[idx],
+                    "meta": self.bm25_metadata[idx],
+                    "score": float(scores[idx]),
+                    "retrieval_method": "bm25"
+                })
         
         return results
-
-
-def save_results_to_files(dataset_name, results_summary, timestamp):
-    """Save evaluation results to JSON and CSV files"""
-    # Create results directory if it doesn't exist
-    results_dir = "evaluation_results"
-    os.makedirs(results_dir, exist_ok=True)
     
-    # Prepare data for saving
-    results_data = {
-        "dataset": dataset_name,
-        "timestamp": timestamp,
-        "results": results_summary
-    }
-    
-    # Save detailed JSON results
-    json_filename = f"{results_dir}/{dataset_name}_hybrid_evaluation_{timestamp}.json"
-    with open(json_filename, 'w') as f:
-        json.dump(results_data, f, indent=2, default=str)
-    print(f"Detailed results saved to: {json_filename}")
-    
-    # Save summary CSV
-    csv_filename = f"{results_dir}/{dataset_name}_hybrid_summary_{timestamp}.csv"
-    with open(csv_filename, 'w', newline='') as f:
-        writer = csv.writer(f)
+    def _dense_search(self, query: str, top_k: int = 25) -> List[Dict[str, Any]]:
+        """Search using dense embeddings"""
+        query_embed = self.embedder.get_embedding(query)
+        raw_results = self.memory.retrieve_chunks(query_embedding=query_embed, top_k=top_k)
         
-        # Write header
-        header = ["Configuration", "nDCG@1", "nDCG@3", "nDCG@5", "nDCG@10", "nDCG@15",
-                 "Recall@1", "Recall@3", "Recall@5", "Recall@10", "Recall@15",
-                 "MAP@1", "MAP@3", "MAP@5", "MAP@10", "MAP@15",
-                 "Precision@1", "Precision@3", "Precision@5", "Precision@10", "Precision@15"]
-        writer.writerow(header)
+        results = []
+        for chunk in raw_results:
+            # Convert distance to similarity score (ChromaDB returns distances)
+            similarity_score = 1.0 / (1.0 + chunk["score"])
+            results.append({
+                "text": chunk["text"],
+                "meta": chunk["metadata"],
+                "score": similarity_score,
+                "retrieval_method": "dense"
+            })
         
-        # Write data rows
-        for config_name, metrics in results_summary.items():
-            row = [config_name]
-            
-            # Add nDCG values
-            for k in [1, 3, 5, 10, 15]:
-                row.append(metrics["ndcg"].get(k, metrics["ndcg"].get(str(k), 0)))
-            
-            # Add Recall values
-            for k in [1, 3, 5, 10, 15]:
-                row.append(metrics["recall"].get(k, metrics["recall"].get(str(k), 0)))
-            
-            # Add MAP values
-            for k in [1, 3, 5, 10, 15]:
-                row.append(metrics["map"].get(k, metrics["map"].get(str(k), 0)))
-            
-            # Add Precision values
-            for k in [1, 3, 5, 10, 15]:
-                row.append(metrics["precision"].get(k, metrics["precision"].get(str(k), 0)))
-            
-            writer.writerow(row)
+        return results
     
-    print(f"Summary CSV saved to: {csv_filename}")
-    
-    # Save a simple comparison CSV for quick analysis
-    comparison_filename = f"{results_dir}/{dataset_name}_hybrid_comparison_{timestamp}.csv"
-    with open(comparison_filename, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(["Configuration", "nDCG@10", "Recall@10", "MAP@10"])
+    def _reciprocal_rank_fusion(self, result_lists: List[List[Dict]], k: int = 60) -> List[Dict[str, Any]]:
+        """Apply Reciprocal Rank Fusion to combine multiple result lists"""
+        fused_scores = {}
         
-        for config_name, metrics in results_summary.items():
-            ndcg_10 = metrics["ndcg"].get(10, metrics["ndcg"].get("10", 0))
-            recall_10 = metrics["recall"].get(10, metrics["recall"].get("10", 0))
-            map_10 = metrics["map"].get(10, metrics["map"].get("10", 0))
-            writer.writerow([config_name, f"{ndcg_10:.4f}", f"{recall_10:.4f}", f"{map_10:.4f}"])
-    
-    print(f"Quick comparison CSV saved to: {comparison_filename}")
-
-
-def evaluate_beir_dataset(dataset_name, dataset_path, configurations):
-    """Evaluate dataset with different hybrid pipeline configurations"""
-    print(f"\n=== Loading {dataset_name} dataset ===")
-    corpus, queries, qrels = GenericDataLoader(dataset_path).load(split="test")
-    print(f"Loaded {len(corpus)} docs, {len(queries)} queries")
-    
-    results_summary = {}
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    for config_name, config in configurations.items():
-        print(f"\n=== Evaluating {config_name} ===")
+        for result_list in result_lists:
+            for rank, doc in enumerate(result_list):
+                doc_id = hash(doc["text"])  # Simple doc ID based on content
+                
+                if doc_id not in fused_scores:
+                    fused_scores[doc_id] = {
+                        "doc": doc,
+                        "score": 0.0,
+                        "methods": []
+                    }
+                
+                # RRF formula: 1 / (k + rank)
+                rrf_score = 1.0 / (k + rank + 1)
+                fused_scores[doc_id]["score"] += rrf_score
+                fused_scores[doc_id]["methods"].append(doc["retrieval_method"])
         
-        retriever = BEIRHybridRetriever(
-            use_cross_encoder=config["cross_encoder"],
-            use_bandit=config["bandit"],
-            top_k=config["top_k"]
-        )
+        # Sort by fused score and return documents
+        sorted_results = sorted(fused_scores.values(), key=lambda x: x["score"], reverse=True)
         
-        # Index once per configuration (in case we want different stores)
-        retriever.index(corpus)
+        final_results = []
+        for item in sorted_results:
+            doc = item["doc"].copy()
+            doc["rrf_score"] = item["score"]
+            doc["retrieval_methods"] = list(set(item["methods"]))  # Remove duplicates
+            doc["score"] = item["score"]  # Use RRF score as primary score
+            final_results.append(doc)
         
-        # Retrieve and evaluate - using final_k=15 for all configurations
-        results = retriever.retrieve(queries, top_k=15)
-        
-        evaluator = EvaluateRetrieval()
-        # Evaluate at ranks that make sense for our final_k=15
-        ndcg, _map, recall, precision = evaluator.evaluate(qrels, results, [1, 3, 5, 10, 15])
-        
-        # Store results
-        results_summary[config_name] = {
-            "ndcg": ndcg,
-            "map": _map,
-            "recall": recall,
-            "precision": precision,
-            "config": config  # Store configuration for reference
-        }
-        
-        print(f"\nResults for {config_name}:")
-        for k in [1, 3, 5, 10, 15]:
-            try:
-                print(f"  nDCG@{k}: {ndcg[k]:.4f} | Recall@{k}: {recall[k]:.4f} | Precision@{k}: {precision[k]:.4f}")
-            except KeyError:
-                print(f"  (No data at rank @{k})")
-
+        return final_results
     
-    # Print comparison
-    print(f"\n=== COMPARISON SUMMARY for {dataset_name} ===")
-    print("Configuration".ljust(30) + "nDCG@10".ljust(12) + "Recall@10".ljust(12) + "MAP@10")
-    print("-" * 65)
-    
-    for config_name, metrics in results_summary.items():
-        ndcg_10 = metrics["ndcg"].get(10) or metrics["ndcg"].get("10", 0)
-        recall_10 = metrics["recall"].get(10) or metrics["recall"].get("10", 0)
-        map_10 = metrics["map"].get(10) or metrics["map"].get("10", 0)
-
-        print(f"{config_name:<30}{ndcg_10:<12.4f}{recall_10:<12.4f}{map_10:.4f}")
-    
-    # Save results to files
-    save_results_to_files(dataset_name, results_summary, timestamp)
-    
-    return results_summary
-
-
-if __name__ == "__main__":
-    DATASETS = {
-        # "nq": "./datasets/nq"
-        # "msmarco": "./datasets/msmarco",
-        "scifact": "./datasets/scifact"
-    }
-    
-    # Different configurations to test hybrid retrieval (no bandit learning)
-    CONFIGURATIONS = {
-    # Baseline - just hybrid retrieval, no cross-encoder
-        "hybrid_baseline": {
-            "cross_encoder": False,
-            "bandit": False,
-            "top_k": 50
-        },
-    
-        # With cross-encoder - to measure cross-encoder impact
-        "hybrid_with_cross_encoder": {
-            "cross_encoder": True,
-            "bandit": False,
-            "top_k": 50  # Same top_k for fair comparison
-        }
-    }
-
-    all_results = {}
-    
-    for name, path in DATASETS.items():
-        if not os.path.exists(path):
-            print(f"Dataset path missing: {path}")
-            continue
+    def retrieve(self, query: str, final_k: int = 10) -> List[Dict[str, Any]]:
+        """Retrieve relevant chunks using hybrid approach: BM25 + Dense + RRF + Reranking"""
         
-        dataset_results = evaluate_beir_dataset(name, path, CONFIGURATIONS)
-        all_results[name] = dataset_results
+        # Step 1: Retrieve from both systems
+        dense_results = self._dense_search(query, top_k=self.top_k//2)
+        bm25_results = self._bm25_search(query, top_k=self.top_k//2)
+        
+        print(f"Dense retrieval: {len(dense_results)} results")
+        print(f"BM25 retrieval: {len(bm25_results)} results")
+        
+        # Step 2: Apply RRF fusion
+        if bm25_results and dense_results:
+            fused_results = self._reciprocal_rank_fusion([dense_results, bm25_results])
+        elif dense_results:
+            fused_results = dense_results
+        elif bm25_results:
+            fused_results = bm25_results
+        else:
+            return []
+        
+        print(f"After RRF fusion: {len(fused_results)} results")
+        
+        # Step 3: Take top candidates for potential reranking
+        candidates = fused_results[:self.top_k]
+        
+        # Step 4: Apply rerankers if available
+        if self.cross_encoder:
+            candidates = self.cross_encoder.rerank(query, candidates, top_k=len(candidates))
+            print(f"After cross-encoder reranking: {len(candidates)} results")
+        
+        return candidates[:final_k]
     
-    # Save combined results across all datasets
-    if all_results:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        results_dir = "evaluation_results"
-        os.makedirs(results_dir, exist_ok=True)
+    def rebuild_bm25_index(self):
+        """Force rebuild of BM25 index (call this after adding new documents)"""
+        print("Rebuilding BM25 index...")
+        # Remove existing files
+        for file in ["bm25_index.pkl", "bm25_docs.pkl", "bm25_meta.pkl"]:
+            if os.path.exists(file):
+                os.remove(file)
         
-        combined_filename = f"{results_dir}/combined_hybrid_evaluation_{timestamp}.json"
-        combined_data = {
-            "timestamp": timestamp,
-            "datasets": all_results,
-            "configurations": CONFIGURATIONS
-        }
-        
-        with open(combined_filename, 'w') as f:
-            json.dump(combined_data, f, indent=2, default=str)
-        
-        print(f"\n=== EVALUATION COMPLETE ===")
-        print(f"Combined results saved to: {combined_filename}")
-        print(f"Individual dataset results saved in: {results_dir}/")
-        print(f"Check the CSV files for easy analysis and comparison!")
+        # Rebuild
+        self._build_bm25_index()
