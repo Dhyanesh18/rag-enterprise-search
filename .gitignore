@@ -1,19 +1,21 @@
+# Ignore compiled Python files and cache
+**/__pycache__/
+*.py[cod]
+
+# Ignore local folders (adjust if needed)
 llama-cpp-python/
 chroma_store/
-chat_log.json
-data/
-datasets/
 chroma_store_beir/
 chroma_store_beir_hybrid/
-
-
-**/__pycache__/
-__pycache__/
-*.py[cod]
 evaluation_results/
+data/
+datasets/
 models/all-MiniLM-L6-v2/
 models/ms-marco-MiniLM-L-6-v2/
 
-*.gguf
-*.pkl
-*.json
+# Ignore output and logs
+chat_log.json
+*.json  
+# if you want to ignore all JSONs — or remove this if you only want to ignore specific ones
+*.pkl  
+*.gguf  
