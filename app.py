@@ -1,9 +1,11 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Form, File, UploadFile
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 import asyncio
-import json
+import os
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from models.llama_wrapper import LlamaChat
 from memory.logger import JSONLogger
@@ -11,15 +13,13 @@ from hybrid_retrieval_pipeline import HybridRetrievalPipeline
 from utils.pipeline_runner import run_hyde_pipeline, run_standard_pipeline
 from utils.prompt_builder import build_prompt
 
-app = FastAPI(title="RAG Chatbot API")
-
-# Mount static files for serving HTML, CSS, JS
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
 # Global variables for models and pipeline
 llama = None
 pipeline = None
 logger = None
+
+supported_extensions = {'.txt', '.md', '.docx', '.pdf'}
+MAX_FILE_SIZE = 10 * 1024 * 1024 #10MB
 
 system_prompt = """
 You are a context-only assistant. NEVER use your training knowledge.
@@ -34,6 +34,35 @@ Rules:
 Context will be provided after this prompt.
 """
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events"""
+    # Startup
+    global llama, pipeline, logger
+    try:
+        print("Initializing models and pipeline...")
+        llama = LlamaChat(model_path="./models/openhermes-2.5-mistral-7b.Q4_K_M.gguf")
+        pipeline = HybridRetrievalPipeline(use_cross_encoder=True, top_k=50)
+        logger = JSONLogger()
+        print("Models and pipeline initialized successfully")
+    except Exception as e:
+        print(f"Error initializing models: {e}")
+        raise e
+    
+    yield  # This is where the application runs
+    
+    # Shutdown
+    print("Shutting down...")
+    if llama:
+        del llama
+        print("Models cleaned up")
+
+# Initialize FastAPI app with lifespan
+app = FastAPI(title="RAG Chatbot API", lifespan=lifespan)
+
+# Mount static files for serving HTML, CSS, JS
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -43,26 +72,11 @@ class ChatResponse(BaseModel):
     success: bool
     error: str = None
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize models and pipeline on startup"""
-    global llama, pipeline, logger
-    try:
-        llama = LlamaChat(model_path="./models/openhermes-2.5-mistral-7b.Q4_K_M.gguf")
-        pipeline = HybridRetrievalPipeline(use_cross_encoder=True, top_k=50)
-        logger = JSONLogger()
-        print("Models and pipeline initialized successfully")
-    except Exception as e:
-        print(f"Error initializing models: {e}")
-        raise e
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    global llama
-    if llama:
-        del llama
-        print("Models cleaned up")
+class UploadResponse(BaseModel):
+    success: bool
+    message: str
+    filename: str = None
+    error: str = None
 
 async def hybrid_retrieve_with_hyde(query, llm, pipeline):
     """Run the hybrid retrieval pipeline with HyDE and standard retrieval in parallel."""
@@ -79,11 +93,33 @@ async def hybrid_retrieve_with_hyde(query, llm, pipeline):
     fused = pipeline.reciprocal_rank_fusion([results_std, results_hyde])
     return fused[:10]
 
+def run_bulk_ingest():
+    """Run the Bulk ingestion script"""
+    try:
+        result = subprocess.run(
+            ["python", "bulk_ingest.py"],
+            capture_output = True,
+            text = True,
+            cwd = os.getcwd()
+        )
+        if result.returncode == 0:
+            return True, result.stdout
+        else: 
+            return False, result.stderr
+    except Exception as e:
+        return False, str(e)
+        
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     """Serve the main HTML page"""
     with open("static/index.html", "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
+
+@app.get("/upload", response_class=UploadResponse)
+async def upload_document(file: UploadFile = File(...)):
+    pass
+
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(message: ChatMessage):

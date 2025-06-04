@@ -22,7 +22,7 @@
 
         /* Sidebar */
         .sidebar {
-            width: 260px;
+            width: 280px;
             background: #202123;
             border-right: 1px solid #444654;
             display: flex;
@@ -47,6 +47,79 @@
 
         .new-chat-btn:hover {
             background: #2a2b32;
+        }
+
+        .upload-section {
+            margin-bottom: 12px;
+            border-bottom: 1px solid #444654;
+            padding-bottom: 12px;
+        }
+
+        .upload-btn {
+            background: #10a37f;
+            border: none;
+            color: #ffffff;
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background-color 0.2s;
+            width: 100%;
+            margin-bottom: 8px;
+        }
+
+        .upload-btn:hover {
+            background: #0d8f6b;
+        }
+
+        .manage-docs-btn {
+            background: transparent;
+            border: 1px solid #444654;
+            color: #ffffff;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: background-color 0.2s;
+            width: 100%;
+        }
+
+        .manage-docs-btn:hover {
+            background: #2a2b32;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .upload-progress {
+            display: none;
+            background: #40414f;
+            border-radius: 6px;
+            padding: 8px;
+            margin-top: 8px;
+            font-size: 12px;
+        }
+
+        .progress-bar {
+            background: #565869;
+            height: 4px;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+
+        .progress-fill {
+            background: #10a37f;
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s;
         }
 
         .chat-history {
@@ -82,6 +155,112 @@
             color: #8e8ea0;
             font-size: 11px;
             margin-bottom: 4px;
+        }
+
+        /* Document Management Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: #40414f;
+            margin: 5% auto;
+            padding: 20px;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #565869;
+            padding-bottom: 10px;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .close {
+            color: #8e8ea0;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close:hover {
+            color: #ffffff;
+        }
+
+        .document-list {
+            margin-bottom: 20px;
+        }
+
+        .document-item {
+            background: #343541;
+            border: 1px solid #565869;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .document-info {
+            flex: 1;
+        }
+
+        .document-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .document-meta {
+            font-size: 12px;
+            color: #8e8ea0;
+        }
+
+        .delete-btn {
+            background: #f56565;
+            border: none;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .delete-btn:hover {
+            background: #e53e3e;
+        }
+
+        .reindex-btn {
+            background: #10a37f;
+            border: none;
+            color: white;
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+        .reindex-btn:hover {
+            background: #0d8f6b;
         }
 
         /* Main Chat Area */
@@ -283,6 +462,15 @@
             font-size: 14px;
         }
 
+        .success-message {
+            background: #10a37f;
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 12px 20px;
+            font-size: 14px;
+        }
+
         /* Welcome Screen */
         .welcome-screen {
             flex: 1;
@@ -389,6 +577,24 @@
             New chat
         </button>
         
+        <div class="upload-section">
+            <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                <span>📄</span>
+                Upload Document
+            </button>
+            <input type="file" id="fileInput" class="file-input" accept=".txt,.pdf,.docx,.doc,.md,.json,.csv" onchange="uploadFile(this)">
+            <button class="manage-docs-btn" onclick="openDocumentModal()">
+                <span>📁</span>
+                Manage Documents
+            </button>
+            <div class="upload-progress" id="uploadProgress">
+                <div id="uploadStatus">Uploading...</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+        </div>
+        
         <div class="chat-history">
             <!-- Chat history would go here -->
         </div>
@@ -399,6 +605,20 @@
                 <div style="color: #8e8ea0; font-size: 12px; font-style: italic; text-align: center; padding: 20px;">
                     Context will appear here when you ask a question
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Document Management Modal -->
+    <div id="documentModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Manage Documents</h2>
+                <span class="close" onclick="closeDocumentModal()">&times;</span>
+            </div>
+            <button class="reindex-btn" onclick="reindexDocuments()">🔄 Re-index All Documents</button>
+            <div class="document-list" id="documentList">
+                <div style="color: #8e8ea0; text-align: center; padding: 20px;">Loading...</div>
             </div>
         </div>
     </div>
@@ -418,227 +638,4 @@
                 <div class="example-prompts">
                     <div class="example-prompt" onclick="sendExampleMessage('Explain the main concepts from the documents')">
                         <div class="example-prompt-title">📚 Summarize Knowledge</div>
-                        <div class="example-prompt-text">Get an overview of key concepts</div>
-                    </div>
-                    <div class="example-prompt" onclick="sendExampleMessage('What are the most important topics covered?')">
-                        <div class="example-prompt-title">🔍 Key Topics</div>
-                        <div class="example-prompt-text">Discover main subject areas</div>
-                    </div>
-                    <div class="example-prompt" onclick="sendExampleMessage('Can you help me understand specific details about...')">
-                        <div class="example-prompt-title">💡 Deep Dive</div>
-                        <div class="example-prompt-text">Explore specific topics in detail</div>
-                    </div>
-                    <div class="example-prompt" onclick="sendExampleMessage('Show me related information about...')">
-                        <div class="example-prompt-title">🔗 Find Connections</div>
-                        <div class="example-prompt-text">Discover related concepts</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="loading-indicator" id="loadingIndicator">
-            <div class="loading-dots">
-                <div class="loading-dot"></div>
-                <div class="loading-dot"></div>
-                <div class="loading-dot"></div>
-            </div>
-            <span>Thinking...</span>
-        </div>
-
-        <div class="input-area">
-            <div class="input-container">
-                <div class="input-wrapper">
-                    <textarea 
-                        id="messageInput" 
-                        class="message-input" 
-                        placeholder="Message RAG Chatbot..."
-                        rows="1"
-                        onkeydown="handleKeyDown(event)"
-                        oninput="autoResize(this)"
-                    ></textarea>
-                    <button id="sendButton" class="send-button" onclick="sendMessage()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        const chatMessages = document.getElementById('chatMessages');
-        const messageInput = document.getElementById('messageInput');
-        const sendButton = document.getElementById('sendButton');
-        const loadingIndicator = document.getElementById('loadingIndicator');
-        const contextContainer = document.getElementById('contextContainer');
-        const welcomeScreen = document.getElementById('welcomeScreen');
-        let isFirstMessage = true;
-
-        function handleKeyDown(event) {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                sendMessage();
-            }
-        }
-
-        function autoResize(textarea) {
-            textarea.style.height = 'auto';
-            textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
-        }
-
-        function startNewChat() {
-            chatMessages.innerHTML = '';
-            chatMessages.appendChild(welcomeScreen);
-            contextContainer.innerHTML = `
-                <div style="color: #8e8ea0; font-size: 12px; font-style: italic; text-align: center; padding: 20px;">
-                    Context will appear here when you ask a question
-                </div>
-            `;
-            isFirstMessage = true;
-            messageInput.focus();
-        }
-
-        function sendExampleMessage(message) {
-            messageInput.value = message;
-            sendMessage();
-        }
-
-        function addMessage(content, isUser = false) {
-            if (isFirstMessage) {
-                welcomeScreen.style.display = 'none';
-                isFirstMessage = false;
-            }
-
-            const messageWrapper = document.createElement('div');
-            messageWrapper.className = `message-wrapper ${isUser ? 'user' : 'assistant'}`;
-            
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message';
-            
-            const avatar = document.createElement('div');
-            avatar.className = 'message-avatar';
-            avatar.textContent = isUser ? 'U' : 'AI';
-            
-            const messageContent = document.createElement('div');
-            messageContent.className = 'message-content';
-            
-            if (typeof content === 'string') {
-                messageContent.innerHTML = content.replace(/\n/g, '<br>');
-            } else {
-                messageContent.appendChild(content);
-            }
-            
-            messageDiv.appendChild(avatar);
-            messageDiv.appendChild(messageContent);
-            messageWrapper.appendChild(messageDiv);
-            
-            chatMessages.appendChild(messageWrapper);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        function displayContext(contextList) {
-            contextContainer.innerHTML = '';
-            
-            if (!contextList || contextList.length === 0) {
-                contextContainer.innerHTML = `
-                    <div style="color: #8e8ea0; font-size: 12px; font-style: italic; text-align: center; padding: 20px;">
-                        No context sources found
-                    </div>
-                `;
-                return;
-            }
-
-            contextList.forEach((context, index) => {
-                const contextDiv = document.createElement('div');
-                contextDiv.className = 'context-item';
-                
-                const score = context.score ? (context.score * 100).toFixed(1) : 'N/A';
-                contextDiv.innerHTML = `
-                    <div class="context-score">Relevance: ${score}%</div>
-                    <div>${context.content.substring(0, 150)}${context.content.length > 150 ? '...' : ''}</div>
-                `;
-                
-                contextContainer.appendChild(contextDiv);
-            });
-        }
-
-        function showError(message) {
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'error-message';
-            errorDiv.textContent = `Error: ${message}`;
-            chatMessages.appendChild(errorDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        async function sendMessage() {
-            const message = messageInput.value.trim();
-            if (!message) return;
-
-            // Disable input and show loading
-            messageInput.disabled = true;
-            sendButton.disabled = true;
-            loadingIndicator.style.display = 'flex';
-
-            // Add user message to chat
-            addMessage(message, true);
-            messageInput.value = '';
-            messageInput.style.height = 'auto';
-
-            try {
-                const response = await fetch('/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ message: message }),
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const data = await response.json();
-                
-                // Add assistant response
-                addMessage(data.response);
-                
-                // Display context
-                displayContext(data.context);
-                
-                if (!data.success && data.error) {
-                    showError(data.error);
-                }
-
-            } catch (error) {
-                console.error('Error:', error);
-                showError(`Failed to get response: ${error.message}`);
-                addMessage('Sorry, I encountered an error while processing your request. Please try again.');
-            } finally {
-                // Re-enable input and hide loading
-                messageInput.disabled = false;
-                sendButton.disabled = false;
-                loadingIndicator.style.display = 'none';
-                messageInput.focus();
-            }
-        }
-
-        // Focus on input when page loads
-        window.addEventListener('load', () => {
-            messageInput.focus();
-        });
-
-        // Check if backend is healthy on load
-        fetch('/health')
-            .then(response => response.json())
-            .then(data => {
-                if (!data.models_loaded) {
-                    showError('Models are not loaded. Please wait a moment and refresh the page.');
-                }
-            })
-            .catch(error => {
-                showError('Cannot connect to the backend. Please make sure the server is running.');
-            });
-    </script>
-</body>
-</html>
+                        <div class="example-prompt-text">Get an o
