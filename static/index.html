@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Chatbot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #343541;
+            color: #ffffff;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: #202123;
+            border-right: 1px solid #444654;
+            display: flex;
+            flex-direction: column;
+            padding: 8px;
+        }
+
+        .new-chat-btn {
+            background: transparent;
+            border: 1px solid #444654;
+            color: #ffffff;
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 8px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background-color 0.2s;
+        }
+
+        .new-chat-btn:hover {
+            background: #2a2b32;
+        }
+
+        .chat-history {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .context-section {
+            border-top: 1px solid #444654;
+            padding-top: 12px;
+            margin-top: 12px;
+        }
+
+        .context-title {
+            font-size: 12px;
+            color: #8e8ea0;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .context-item {
+            background: #2a2b32;
+            border-radius: 6px;
+            padding: 8px;
+            margin-bottom: 6px;
+            font-size: 12px;
+            color: #c5c5d2;
+            border-left: 2px solid #10a37f;
+        }
+
+        .context-score {
+            color: #8e8ea0;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+
+        /* Main Chat Area */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #343541;
+        }
+
+        .chat-header {
+            background: #40414f;
+            border-bottom: 1px solid #444654;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .model-selector {
+            background: transparent;
+            border: 1px solid #565869;
+            color: #ffffff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0;
+        }
+
+        .message-wrapper {
+            width: 100%;
+            border-bottom: 1px solid #444654;
+        }
+
+        .message-wrapper.user {
+            background: #343541;
+        }
+
+        .message-wrapper.assistant {
+            background: #444654;
+        }
+
+        .message {
+            max-width: 768px;
+            margin: 0 auto;
+            padding: 24px;
+            display: flex;
+            gap: 16px;
+        }
+
+        .message-avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .user .message-avatar {
+            background: #5436da;
+            color: white;
+        }
+
+        .assistant .message-avatar {
+            background: #10a37f;
+            color: white;
+        }
+
+        .message-content {
+            flex: 1;
+            line-height: 1.6;
+            font-size: 16px;
+        }
+
+        .message-content p {
+            margin-bottom: 16px;
+        }
+
+        .message-content p:last-child {
+            margin-bottom: 0;
+        }
+
+        /* Input Area */
+        .input-area {
+            padding: 20px;
+            background: #343541;
+        }
+
+        .input-container {
+            max-width: 768px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .input-wrapper {
+            background: #40414f;
+            border: 1px solid #565869;
+            border-radius: 12px;
+            display: flex;
+            align-items: flex-end;
+            padding: 12px;
+            min-height: 52px;
+        }
+
+        .message-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #ffffff;
+            font-size: 16px;
+            resize: none;
+            outline: none;
+            max-height: 200px;
+            overflow-y: auto;
+            line-height: 1.5;
+        }
+
+        .message-input::placeholder {
+            color: #8e8ea0;
+        }
+
+        .send-button {
+            background: #10a37f;
+            border: none;
+            border-radius: 6px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: white;
+            margin-left: 8px;
+            transition: background-color 0.2s;
+        }
+
+        .send-button:hover:not(:disabled) {
+            background: #0d8f6b;
+        }
+
+        .send-button:disabled {
+            background: #565869;
+            cursor: not-allowed;
+        }
+
+        .loading-indicator {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            color: #8e8ea0;
+            font-size: 14px;
+            margin: 20px 0;
+            justify-content: center;
+        }
+
+        .loading-dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .loading-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #8e8ea0;
+            animation: pulse 1.4s ease-in-out infinite both;
+        }
+
+        .loading-dot:nth-child(1) { animation-delay: -0.32s; }
+        .loading-dot:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes pulse {
+            0%, 80%, 100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+            40% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .error-message {
+            background: #f56565;
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 12px 20px;
+            font-size: 14px;
+        }
+
+        /* Welcome Screen */
+        .welcome-screen {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .welcome-title {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            background: linear-gradient(90deg, #10a37f, #5436da);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .welcome-subtitle {
+            color: #8e8ea0;
+            font-size: 16px;
+            margin-bottom: 32px;
+        }
+
+        .example-prompts {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .example-prompt {
+            background: #40414f;
+            border: 1px solid #565869;
+            border-radius: 8px;
+            padding: 16px;
+            cursor: pointer;
+            transition: border-color 0.2s, background-color 0.2s;
+            text-align: left;
+        }
+
+        .example-prompt:hover {
+            border-color: #8e8ea0;
+            background: #4a4b5a;
+        }
+
+        .example-prompt-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+
+        .example-prompt-text {
+            color: #8e8ea0;
+            font-size: 13px;
+        }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+            
+            .message {
+                padding: 16px;
+            }
+            
+            .input-area {
+                padding: 12px;
+            }
+            
+            .example-prompts {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #565869;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6f7080;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <button class="new-chat-btn" onclick="startNewChat()">
+            <span>+</span>
+            New chat
+        </button>
+        
+        <div class="chat-history">
+            <!-- Chat history would go here -->
+        </div>
+        
+        <div class="context-section">
+            <div class="context-title">Context Sources</div>
+            <div id="contextContainer">
+                <div style="color: #8e8ea0; font-size: 12px; font-style: italic; text-align: center; padding: 20px;">
+                    Context will appear here when you ask a question
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="chat-header">
+            <select class="model-selector">
+                <option>RAG Chatbot</option>
+            </select>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="welcome-screen" id="welcomeScreen">
+                <h1 class="welcome-title">How can I help you today?</h1>
+                <p class="welcome-subtitle">Ask me anything from my knowledge base</p>
+                
+                <div class="example-prompts">
+                    <div class="example-prompt" onclick="sendExampleMessage('Explain the main concepts from the documents')">
+                        <div class="example-prompt-title">📚 Summarize Knowledge</div>
+                        <div class="example-prompt-text">Get an overview of key concepts</div>
+                    </div>
+                    <div class="example-prompt" onclick="sendExampleMessage('What are the most important topics covered?')">
+                        <div class="example-prompt-title">🔍 Key Topics</div>
+                        <div class="example-prompt-text">Discover main subject areas</div>
+                    </div>
+                    <div class="example-prompt" onclick="sendExampleMessage('Can you help me understand specific details about...')">
+                        <div class="example-prompt-title">💡 Deep Dive</div>
+                        <div class="example-prompt-text">Explore specific topics in detail</div>
+                    </div>
+                    <div class="example-prompt" onclick="sendExampleMessage('Show me related information about...')">
+                        <div class="example-prompt-title">🔗 Find Connections</div>
+                        <div class="example-prompt-text">Discover related concepts</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="loading-indicator" id="loadingIndicator">
+            <div class="loading-dots">
+                <div class="loading-dot"></div>
+                <div class="loading-dot"></div>
+                <div class="loading-dot"></div>
+            </div>
+            <span>Thinking...</span>
+        </div>
+
+        <div class="input-area">
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="messageInput" 
+                        class="message-input" 
+                        placeholder="Message RAG Chatbot..."
+                        rows="1"
+                        onkeydown="handleKeyDown(event)"
+                        oninput="autoResize(this)"
+                    ></textarea>
+                    <button id="sendButton" class="send-button" onclick="sendMessage()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatMessages = document.getElementById('chatMessages');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const contextContainer = document.getElementById('contextContainer');
+        const welcomeScreen = document.getElementById('welcomeScreen');
+        let isFirstMessage = true;
+
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+        }
+
+        function startNewChat() {
+            chatMessages.innerHTML = '';
+            chatMessages.appendChild(welcomeScreen);
+            contextContainer.innerHTML = `
+                <div style="color: #8e8ea0; font-size: 12px; font-style: italic; text-align: center; padding: 20px;">
+                    Context will appear here when you ask a question
+                </div>
+            `;
+            isFirstMessage = true;
+            messageInput.focus();
+        }
+
+        function sendExampleMessage(message) {
+            messageInput.value = message;
+            sendMessage();
+        }
+
+        function addMessage(content, isUser = false) {
+            if (isFirstMessage) {
+                welcomeScreen.style.display = 'none';
+                isFirstMessage = false;
+            }
+
+            const messageWrapper = document.createElement('div');
+            messageWrapper.className = `message-wrapper ${isUser ? 'user' : 'assistant'}`;
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            avatar.textContent = isUser ? 'U' : 'AI';
+            
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+            
+            if (typeof content === 'string') {
+                messageContent.innerHTML = content.replace(/\n/g, '<br>');
+            } else {
+                messageContent.appendChild(content);
+            }
+            
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(messageContent);
+            messageWrapper.appendChild(messageDiv);
+            
+            chatMessages.appendChild(messageWrapper);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function displayContext(contextList) {
+            contextContainer.innerHTML = '';
+            
+            if (!contextList || contextList.length === 0) {
+                contextContainer.innerHTML = `
+                    <div style="color: #8e8ea0; font-size: 12px; font-style: italic; text-align: center; padding: 20px;">
+                        No context sources found
+                    </div>
+                `;
+                return;
+            }
+
+            contextList.forEach((context, index) => {
+                const contextDiv = document.createElement('div');
+                contextDiv.className = 'context-item';
+                
+                const score = context.score ? (context.score * 100).toFixed(1) : 'N/A';
+                contextDiv.innerHTML = `
+                    <div class="context-score">Relevance: ${score}%</div>
+                    <div>${context.content.substring(0, 150)}${context.content.length > 150 ? '...' : ''}</div>
+                `;
+                
+                contextContainer.appendChild(contextDiv);
+            });
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = `Error: ${message}`;
+            chatMessages.appendChild(errorDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            // Disable input and show loading
+            messageInput.disabled = true;
+            sendButton.disabled = true;
+            loadingIndicator.style.display = 'flex';
+
+            // Add user message to chat
+            addMessage(message, true);
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message: message }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                // Add assistant response
+                addMessage(data.response);
+                
+                // Display context
+                displayContext(data.context);
+                
+                if (!data.success && data.error) {
+                    showError(data.error);
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                showError(`Failed to get response: ${error.message}`);
+                addMessage('Sorry, I encountered an error while processing your request. Please try again.');
+            } finally {
+                // Re-enable input and hide loading
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                loadingIndicator.style.display = 'none';
+                messageInput.focus();
+            }
+        }
+
+        // Focus on input when page loads
+        window.addEventListener('load', () => {
+            messageInput.focus();
+        });
+
+        // Check if backend is healthy on load
+        fetch('/health')
+            .then(response => response.json())
+            .then(data => {
+                if (!data.models_loaded) {
+                    showError('Models are not loaded. Please wait a moment and refresh the page.');
+                }
+            })
+            .catch(error => {
+                showError('Cannot connect to the backend. Please make sure the server is running.');
+            });
+    </script>
+</body>
+</html>
