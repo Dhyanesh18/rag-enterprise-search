@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Form, File, UploadFile
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import asyncio
@@ -18,7 +18,8 @@ llama = None
 pipeline = None
 logger = None
 
-supported_extensions = {'.txt', '.md', '.docx', '.pdf'}
+DATA_DIR = "./data"
+SUPPORTED_EXTENSIONS = {'.txt', '.md', '.docx', '.pdf'}
 MAX_FILE_SIZE = 10 * 1024 * 1024 #10MB
 
 system_prompt = """
@@ -116,9 +117,138 @@ async def read_root():
     with open("static/index.html", "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
-@app.get("/upload", response_class=UploadResponse)
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse("static/favicon.ico")
+
+@app.post("/upload", response_class=UploadResponse)
 async def upload_document(file: UploadFile = File(...)):
-    pass
+    """Upload a document to the data directory and trigger ingestion"""
+    try:
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No file selected")
+        file_extension = os.path.splitext(file.filename)[1].lower()
+        if file_extension not in SUPPORTED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type. Supported types: {', '.join(SUPPORTED_EXTENSIONS)}"
+            )
+        
+        content = await file.read()
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024*10)}MB"
+            )
+        
+        # Save the file
+        file_path = os.path.join(DATA_DIR, file.filename)
+        counter = 1
+        original_path = file_path
+        while os.path.exists(file_path):
+            name, ext = os.path.splitext(original_path)
+            file_path = f"{name}_{counter}{ext}"
+            counter+=1
+
+        with open(file_path, "wb") as f:
+            f.write(content)
+
+        success, output = run_bulk_ingest()
+
+        if success:
+            return UploadResponse(
+                success = True,
+                message = f"Document uploaded and processes successfully. {output.strip()}",
+                filename = os.path.basename(file_path)
+            )
+        else:
+            return UploadResponse(
+                success = False,
+                message = f"Document upload and processing failed",
+                filename = os.path.basename(file_path),
+                error = output
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+            return UploadResponse(
+                success = False,
+                message = "Upload Failed",
+                error = str(e)
+            )
+
+
+
+
+@app.get("/documents")
+async def list_documents():
+    """List all documents in the data directory"""
+    try:
+        files = []
+        for filename in os.listdir(DATA_DIR):
+            file_path = os.path.join(DATA_DIR, filename)
+            if os.path.isfile(file_path):
+                stat = os.stat(file_path)
+                files.append({
+                    "filename": filename,
+                    "size": stat.st_size,
+                    "modified": stat.st_mtime
+                })
+
+        return {"files": files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/documents/{filename}")
+async def delete_document(filename: str):
+    """Delete a document from the data directory"""
+    try:
+        file_path = os.path.join(DATA_DIR, filename)
+
+        abs_data_dir = os.path.abspath(DATA_DIR)
+        abs_file_path = os.path.abspath(file_path)
+
+        if not abs_file_path.startswith(abs_data_dir):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        os.remove(file_path)
+
+        success, output = run_bulk_ingest()
+
+        return {
+            "success": True,
+            "message": f"Document {filename} deleted successfully",
+            "reindex_success": success,
+            "reindex_output": output if success else None
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.post("/reindex")
+async def reindex_documents():
+    """Manually reindex all the documents"""
+    try:
+        success, output = run_bulk_ingest()
+
+        return {
+            "success" : success,
+            "message" : "Re-indexing completed" if success else "Re-indexing failed",
+            "output": output
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -129,12 +259,15 @@ async def chat_endpoint(message: ChatMessage):
             raise HTTPException(status_code=400, detail="Message cannot be empty")
         
         # Run the hybrid retrieval pipeline
-        top_chunks = await hybrid_retrieve_with_hyde(message.message, llama, pipeline)
+        if message.message in ["Explain the main concepts from the documents", "What are the most important topics covered?", "Can you help me understand specific details about...", "Show me related information about..."]:
+            top_chunks = run_standard_pipeline(message.message, pipeline)
+        else:    
+            top_chunks = await hybrid_retrieve_with_hyde(message.message, llama, pipeline)
         
         context_list = [
             {
                 "content": chunk["text"],
-                "score": chunk.get("score"),
+                "score": float(chunk.get("score")) if chunk.get("score") is not None else None,
                 "meta": chunk.get("meta")
             }
             for chunk in top_chunks
