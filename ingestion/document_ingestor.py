@@ -1,3 +1,20 @@
+"""
+Document Ingestion Module
+
+This script handles ingestion of various document types (PDF, DOCX, TXT, MD),
+extracts and cleans their text, splits them into semantically meaningful chunks,
+embeds those chunks using a vector model, and stores them in a ChromaDB-backed
+persistent vector store for retrieval.
+
+Supported file types:
+- .pdf
+- .docx
+- .txt
+- .md
+
+Dependencies:
+- PyPDF2, pdfplumber, python-docx, langchain, memory (custom modules)
+"""
 import os
 from PyPDF2 import PdfReader
 import pdfplumber
@@ -13,7 +30,15 @@ logger = JSONLogger("document_ingestion_log.json")
 
 
 def extract_pdf_text(file_path):
-    """Extract text from a PDF file using pdfplumber, falling back to PyPDF2 if necessary."""
+    """
+    Extract text from a PDF file using pdfplumber; fallback to PyPDF2 if necessary.
+
+    Args:
+        file_path (str): Path to the PDF file.
+
+    Returns:
+        str: Extracted text content.
+    """
     try:
         with pdfplumber.open(file_path) as pdf:
             text = ""
@@ -33,17 +58,43 @@ def extract_pdf_text(file_path):
         return text.strip()
     
 def extract_md_text(file_path):
+    """
+    Extract raw text from a Markdown (.md) file.
+
+    Args:
+        file_path (str): Path to the Markdown file.
+
+    Returns:
+        str: Extracted text.
+    """
     """Extract text from a Markdown file."""
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read().strip()
 
 def extract_txt_text(file_path):
+    """
+    Extract raw text from a plain text (.txt) file.
+
+    Args:
+        file_path (str): Path to the text file.
+
+    Returns:
+        str: Extracted text.
+    """
     """Extract text from a plain text file."""
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read().strip()
 
 def extract_docx_text(file_path):
-    """Extract text from a DOCX file, handling headings and tables."""
+    """
+    Extract text from a DOCX file including paragraphs and tables.
+
+    Args:
+        file_path (str): Path to the DOCX file.
+
+    Returns:
+        str: Extracted and formatted text.
+    """
     doc = Document(file_path)
     full_text = []
 
@@ -67,14 +118,35 @@ def extract_docx_text(file_path):
     return "\n".join(full_text).strip()
 
 def clean_text(text):
-    """Clean the extracted text by removing excessive whitespace and newlines."""
+    """
+    Clean text by normalizing spaces and line breaks.
+
+    Args:
+        text (str): Raw extracted text.
+
+    Returns:
+        str: Cleaned text.
+    """
     text = re.sub(r'[ \t]+', ' ', text) # Replace multiple spaces/tabs with a single space
     text = re.sub(r'\n{3,}', '\n\n', text) # Replace multiple newlines with two newlines
     return text.strip()
 
 
 def ingest_file(file_path):
-    """Ingest a file and store its content in the memory store."""
+    """
+    Ingest a single file:
+    - Extracts text
+    - Cleans and splits it into chunks
+    - Embeds each chunk
+    - Stores it in MemoryStore
+    - Logs the process
+
+    Args:
+        file_path (str): Path to the file to be ingested.
+
+    Raises:
+        ValueError: If file type is unsupported.
+    """
     ext = os.path.splitext(file_path)[1].lower()
 
     if ext == ".pdf":
