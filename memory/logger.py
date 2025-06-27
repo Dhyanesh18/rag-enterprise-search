@@ -10,6 +10,7 @@ class JSONLogger:
                 json.dump([], f)  # Initialize empty list
 
     def log(self, user_msg, assistant_msg):
+        """Log user and assistant interactions"""
         entry = {
             "user": user_msg,
             "assistant": assistant_msg
@@ -21,6 +22,7 @@ class JSONLogger:
             json.dump(data, f, indent=2)
 
     def log_ingestion(self, file_path, total_chunks, ingested_chunks):
+        """Log document ingestion history"""
         log_entry = {
             "timestamp": time.strftime("%A, %B %d, %Y at %I:%M %p", time.localtime()),
             "file":file_path,
