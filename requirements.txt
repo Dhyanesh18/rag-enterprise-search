@@ -1,9 +1,21 @@
-llama-cpp-python
-chromadb
+# --- Core Backend ---
+fastapi
+uvicorn
+pydantic
+python-multipart
+
+# --- RAG Components ---
 sentence-transformers
-langchain
-PyPDF2
+chromadb
 pdfplumber
+PyPDF2
 python-docx
-beir
+markdown
 numpy
+tqdm
+
+# --- Local LLM with CUDA acceleration ---
+llama-cpp-python[cuda] @ git+https://github.com/abetlen/llama-cpp-python.git
+
+# --- Optional Frontend Support ---
+jinja2
