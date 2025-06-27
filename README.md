@@ -88,3 +88,8 @@ uvicorn app:app --reload
     Cross-Encoder: ms-marco-MiniLM-L-6-v2
 
     Vector store: ChromaDB (can be swapped)
+
+
+### Sample screenshots
+![Screenshot 2025-06-06 140004](https://github.com/user-attachments/assets/9f0decb4-c6f9-4f65-9b21-a52ca16f3eed)
+
